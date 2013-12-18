@@ -29,7 +29,8 @@ namespace Dapper.Contrib.Extensions
 		private static readonly Dictionary<string, ISqlAdapter> AdapterDictionary = new Dictionary<string, ISqlAdapter>() {
 																							{"sqlconnection", new SqlServerAdapter()},
 																							{"npgsqlconnection", new PostgresAdapter()},
-                                                                                            {"sqliteconnection", new SQLiteAdapter()}
+                                                                                            {"sqliteconnection", new SQLiteAdapter()},
+                                                                                            {"mysqlconnection", new MySqlAdapter()}
 																						};
 
         private static IEnumerable<PropertyInfo> KeyPropertiesCache(Type type)
@@ -366,58 +367,8 @@ namespace Dapper.Contrib.Extensions
 
         public static bool DoesTableExist(this IDbConnection connection, string tableName)
         {
-
-            string cnType = connection.GetType().ToString();
-
-            if (cnType == "System.Data.SqlClient.SqlConnection")
-            {
-                return DoesTableExistMsSql(connection, tableName);
-            }
-            else if (cnType == "System.Data.SQLite.SQLiteConnection")
-            {
-                return DoesTableExistSqlite(connection, tableName);
-            }
-            else if (cnType == "MySql.Data.MySqlClient.MySqlConnection")
-            {
-                return DoesTableExistMySql(connection, tableName);
-            }
-
-           throw new ArgumentException("Connection provider is not supported");
-
-        }
-
-        private static bool DoesTableExistMsSql(IDbConnection connection, string tableName)
-        {
-
-
-            var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = @name",
-                new { name = tableName });
-
-            return result.ElementAt(0).Exists > 0;
-
-        }
-
-        private static bool DoesTableExistSqlite(IDbConnection connection, string tableName)
-        {
-
-
-            var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM sqlite_master WHERE type='table' AND name = @name", 
-                new { name = tableName });
-
-            return result.ElementAt(0).Exists > 0;
-
-        }
-
-        private static bool DoesTableExistMySql(IDbConnection connection, string tableName)
-        {
-
-            var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM INFORMATION_SCHEMA.TABLES " +
-                "WHERE TABLE_NAME = @tname AND " +
-                "TABLE_SCHEMA = @ts",
-                new { tname = tableName, ts = connection.Database });
-
-            return result.ElementAt(0).Exists > 0;
-
+            var adapter = GetFormatter(connection);
+            return adapter.DoesTableExist(connection, tableName);
         }
 
 
@@ -610,6 +561,7 @@ namespace Dapper.Contrib.Extensions
 public interface ISqlAdapter
 {
 	int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert);
+    bool DoesTableExist(IDbConnection connection, string tableName);
 }
 
 public class SqlServerAdapter : ISqlAdapter
@@ -627,6 +579,20 @@ public class SqlServerAdapter : ISqlAdapter
 			keyProperties.First().SetValue(entityToInsert, id, null);
 		return id;
 	}
+
+    public bool DoesTableExist(IDbConnection connection, string tableName)
+    {
+
+
+        var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = @name",
+            new { name = tableName });
+
+        return result.ElementAt(0).Exists > 0;
+
+    }
+
+    
+
 }
 
 public class PostgresAdapter : ISqlAdapter
@@ -666,6 +632,19 @@ public class PostgresAdapter : ISqlAdapter
 		return id;
 	}
 
+
+    public bool DoesTableExist(IDbConnection connection, string tableName)
+    {
+
+
+        var result = connection.Query("SELECT COUNT(*) FROM pg_class WHERE relname = @name",
+            new { name = tableName });
+
+        return result.ElementAt(0).Exists > 0;
+
+    }
+
+
 }
 
 public class SQLiteAdapter : ISqlAdapter
@@ -683,5 +662,51 @@ public class SQLiteAdapter : ISqlAdapter
             keyProperties.First().SetValue(entityToInsert, id, null);
         return id;
     }
+
+
+    public bool DoesTableExist(IDbConnection connection, string tableName)
+    {
+
+
+        var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM sqlite_master WHERE type='table' AND name = @name",
+            new { name = tableName });
+
+        return result.ElementAt(0).Exists > 0;
+
+    }
+
+
 }
+
+public class MySqlAdapter : ISqlAdapter
+{
+    public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
+        string cmd = String.Format("insert into {0} ({1}) values ({2})", tableName, columnList, parameterList);
+
+        connection.Execute(cmd, entityToInsert, transaction: transaction, commandTimeout: commandTimeout);
+
+        //NOTE: would prefer to use IDENT_CURRENT('tablename') or IDENT_SCOPE but these are not available on SQLCE
+        var r = connection.Query("select LAST_INSERT_ID() id", transaction: transaction, commandTimeout: commandTimeout);
+        int id = (int)r.First().id;
+        if (keyProperties.Any())
+            keyProperties.First().SetValue(entityToInsert, id, null);
+        return id;
+    }
+
+
+    public bool DoesTableExist(IDbConnection connection, string tableName)
+    {
+
+        var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM INFORMATION_SCHEMA.TABLES " +
+            "WHERE TABLE_NAME = @tname AND " +
+            "TABLE_SCHEMA = @ts",
+            new { tname = tableName, ts = connection.Database });
+
+        return result.ElementAt(0).Exists > 0;
+
+    }
+
+}
+
 
