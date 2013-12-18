@@ -385,7 +385,7 @@ namespace Dapper.Contrib.Extensions
 
         }
 
-        public static bool DoesTableExistMsSql(IDbConnection connection, string tableName)
+        private static bool DoesTableExistMsSql(IDbConnection connection, string tableName)
         {
 
 
@@ -396,7 +396,7 @@ namespace Dapper.Contrib.Extensions
 
         }
 
-        public static bool DoesTableExistSqlite(IDbConnection connection, string tableName)
+        private static bool DoesTableExistSqlite(IDbConnection connection, string tableName)
         {
 
 
@@ -407,7 +407,7 @@ namespace Dapper.Contrib.Extensions
 
         }
 
-        public static bool DoesTableExistMySql(IDbConnection connection, string tableName)
+        private static bool DoesTableExistMySql(IDbConnection connection, string tableName)
         {
 
             var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM INFORMATION_SCHEMA.TABLES " +
