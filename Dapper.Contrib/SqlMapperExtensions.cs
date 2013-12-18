@@ -363,6 +363,63 @@ namespace Dapper.Contrib.Extensions
 			return AdapterDictionary[name];
 		}
 
+        public static bool DoesTableExist(this IDbConnection connection, string tableName)
+        {
+
+            string cnType = connection.GetType().ToString();
+
+            if (cnType == "System.Data.SqlClient.SqlConnection")
+            {
+                return DoesTableExistMsSql(connection, tableName);
+            }
+            else if (cnType == "System.Data.SQLite.SQLiteConnection")
+            {
+                return DoesTableExistSqlite(connection, tableName);
+            }
+            else if (cnType == "MySql.Data.MySqlClient.MySqlConnection")
+            {
+                return DoesTableExistMySql(connection, tableName);
+            }
+
+           throw new ArgumentException("Connection provider is not supported");
+
+        }
+
+        public static bool DoesTableExistMsSql(IDbConnection connection, string tableName)
+        {
+
+
+            var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = @name",
+                new { name = tableName });
+
+            return result.ElementAt(0).Exists > 0;
+
+        }
+
+        public static bool DoesTableExistSqlite(IDbConnection connection, string tableName)
+        {
+
+
+            var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM sqlite_master WHERE type='table' AND name = @name", 
+                new { name = tableName });
+
+            return result.ElementAt(0).Exists > 0;
+
+        }
+
+        public static bool DoesTableExistMySql(IDbConnection connection, string tableName)
+        {
+
+            var result = connection.Query("SELECT COUNT(*) as 'Exists' FROM INFORMATION_SCHEMA.TABLES " +
+                "WHERE TABLE_NAME = @tname AND " +
+                "TABLE_SCHEMA = @ts",
+                new { tname = tableName, ts = connection.Database });
+
+            return result.ElementAt(0).Exists > 0;
+
+        }
+
+
     	class ProxyGenerator
         {
             private static readonly Dictionary<Type, object> TypeCache = new Dictionary<Type, object>();
