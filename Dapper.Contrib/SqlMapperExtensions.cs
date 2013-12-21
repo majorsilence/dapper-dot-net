@@ -266,11 +266,12 @@ namespace Dapper.Contrib.Extensions
 			var allProperties = TypePropertiesCache(type);
             var keyProperties = KeyPropertiesCache(type);
             var allPropertiesExceptKey = allProperties.Except(keyProperties.Where(k => !IsKeyWriteable(k, false)));
+			ISqlAdapter adapter = GetFormatter(connection);
 
             for (var i = 0; i < allPropertiesExceptKey.Count(); i++)
             {
                 var property = allPropertiesExceptKey.ElementAt(i);
-				sbColumnList.AppendFormat("[{0}]", property.Name);
+				sbColumnList.AppendFormat("{0}{1}{2}", adapter.ColumnQoutePrefix, property.Name, adapter.ColumnQouteSuffix);
                 if (i < allPropertiesExceptKey.Count() - 1)
 					sbColumnList.Append(", ");
             }
@@ -283,7 +284,7 @@ namespace Dapper.Contrib.Extensions
                 if (i < allPropertiesExceptKey.Count() - 1)
                     sbParameterList.Append(", ");
             }
-			ISqlAdapter adapter = GetFormatter(connection);
+			
 			int id = adapter.Insert(connection, transaction, commandTimeout, name, sbColumnList.ToString(), sbParameterList.ToString(),  keyProperties, entityToInsert);
 			return id;
         }
@@ -306,11 +307,12 @@ namespace Dapper.Contrib.Extensions
             var allProperties = TypePropertiesCache(type);
             var keyProperties = KeyPropertiesCache(type);
             var allPropertiesExceptKey = allProperties.Except(keyProperties.Where(k => !IsKeyWriteable(k, false)));
+			ISqlAdapter adapter = GetFormatter(connection);
 
             for (var i = 0; i < allPropertiesExceptKey.Count(); i++)
             {
                 var property = allPropertiesExceptKey.ElementAt(i);
-                sbColumnList.AppendFormat("[{0}]", property.Name);
+				sbColumnList.AppendFormat("{0}{1}{2}", adapter.ColumnQoutePrefix, property.Name, adapter.ColumnQouteSuffix);
                 if (i < allPropertiesExceptKey.Count() - 1)
                     sbColumnList.Append(", ");
             }
@@ -323,7 +325,7 @@ namespace Dapper.Contrib.Extensions
                 if (i < allPropertiesExceptKey.Count() - 1)
                     sbParameterList.Append(", ");
             }
-            ISqlAdapter adapter = GetFormatter(connection);
+            
             TKey id = adapter.Insert<TKey>(connection, transaction, commandTimeout, name, sbColumnList.ToString(), sbParameterList.ToString(), keyProperties, entityToInsert);
             return id;
         }
@@ -625,6 +627,8 @@ public interface ISqlAdapter
 	int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert);
 	TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert);
     bool DoesTableExist(IDbConnection connection, string tableName);
+	char ColumnQoutePrefix { get; }
+	char ColumnQouteSuffix { get; }
 }
 
 public class SqlServerAdapter : ISqlAdapter
@@ -660,6 +664,20 @@ public class SqlServerAdapter : ISqlAdapter
 
     }
 
+	public char ColumnQoutePrefix
+	{
+		get
+		{
+			return '[';
+		}
+	}
+	public char ColumnQouteSuffix
+	{
+		get
+		{
+			return ']';
+		}
+	}
     
 
 }
@@ -721,6 +739,21 @@ public class PostgresAdapter : ISqlAdapter
     }
 
 
+	public char ColumnQoutePrefix
+	{
+		get
+		{
+			return '"';
+		}
+	}
+	public char ColumnQouteSuffix
+	{
+		get
+		{
+			return '"';
+		}
+	}
+
 }
 
 public class SQLiteAdapter : ISqlAdapter
@@ -758,6 +791,20 @@ public class SQLiteAdapter : ISqlAdapter
 
     }
 
+	public char ColumnQoutePrefix
+	{
+		get
+		{
+			return '[';
+		}
+	}
+	public char ColumnQouteSuffix
+	{
+		get
+		{
+			return ']';
+		}
+	}
 
 }
 
@@ -794,6 +841,21 @@ public class MySqlAdapter : ISqlAdapter
         return result.ElementAt(0).Exists > 0;
 
     }
+
+	public char ColumnQoutePrefix
+	{
+		get
+		{
+			return '`';
+		}
+	}
+	public char ColumnQouteSuffix
+	{
+		get
+		{
+			return '`';
+		}
+	}
 
 }
 
