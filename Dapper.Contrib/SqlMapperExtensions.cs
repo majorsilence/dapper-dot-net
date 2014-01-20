@@ -169,37 +169,33 @@ namespace Dapper.Contrib.Extensions
             var type = typeof(T);
             string sql;
             var dynParms = new DynamicParameters();
-            if (!GetQueries.TryGetValue(type.TypeHandle, out sql))
+
+            var keys = KeyPropertiesCache(type);
+
+            if (keys.Count() == 0)
+                throw new DataException("Get<T> only supports an entity with [Key] properties");
+            if (keys.Count() != id.Length)
+                throw new DataException("Get<T> only supports an entity with a single [Key] property");
+
+            var name = GetTableName(type);
+
+            // TODO: pluralizer 
+            // TODO: query information schema and only select fields that are both in information schema and underlying class / interface 
+            var sbSql = new StringBuilder();
+            sbSql.Append("select * from " + name + " where ");
+            for (var i = 0; i < keys.Count(); i++)
             {
-                
-                var keys = KeyPropertiesCache(type);
-                
-                if (keys.Count() == 0)
-                    throw new DataException("Get<T> only supports an entity with [Key] properties");
-                if (keys.Count() != id.Length)
-                    throw new DataException("Get<T> only supports an entity with a single [Key] property");
-               
-                var name = GetTableName(type);
+                sbSql.Append(keys.ElementAt(i).Name + " = @key_" + keys.ElementAt(i).Name + " ");
+                if (i < keys.Count() - 1)
+                    sbSql.Append(" and ");
 
-                // TODO: pluralizer 
-                // TODO: query information schema and only select fields that are both in information schema and underlying class / interface 
-                var sbSql = new StringBuilder();
-                sbSql.Append("select * from " + name + " where ");
-                for (var i = 0; i < keys.Count(); i++)
-                {
-                    sbSql.Append(keys.ElementAt(i).Name + " = @key_" + keys.ElementAt(i).Name + " ");
-                    if (i < keys.Count() - 1)
-                        sbSql.Append(" and ");
-
-                    dynParms.Add("@key_" + keys.ElementAt(i).Name, id.ElementAt(i));
-                }
-                    
-                sql = sbSql.ToString();
-                GetQueries[type.TypeHandle] = sql;
+                dynParms.Add("@key_" + keys.ElementAt(i).Name, id.ElementAt(i));
             }
 
-            
-            
+            sql = sbSql.ToString();
+            GetQueries[type.TypeHandle] = sql;
+  
+                 
 
             T obj = null;
 
