@@ -155,6 +155,80 @@ namespace Dapper.Contrib.Extensions
             return obj;
         }
 
+        /// <summary>
+        /// Returns a single entity by a composite key from table "Ts". T must be of interface type. 
+        /// Id keys must be marked with [Key] attribute.
+        /// Created entity is tracked/intercepted for changes and used by the Update() extension. 
+        /// </summary>
+        /// <typeparam name="T">Interface type to create and populate</typeparam>
+        /// <param name="connection">Open SqlConnection</param>
+        /// <param name="transaction"></param>
+        /// <param name="commandTimeout"></param>
+        /// <param name="id">Ids of the entity to get, must be marked with [Key] attribute</param>
+        /// <returns>Entity of T</returns>
+        public static T Get<T>(this IDbConnection connection, IDbTransaction transaction = null, int? commandTimeout = null, params dynamic[] id) where T : class
+        {
+            var type = typeof(T);
+            string sql;
+            var dynParms = new DynamicParameters();
+           
+                
+            var keys = KeyPropertiesCache(type);
+                
+            if (keys.Count() == 0)
+                throw new DataException("Get<T> only supports an entity with [Key] properties");
+            if (keys.Count() != id.Length)
+                throw new DataException("Get<T> only supports an entity with a single [Key] property");
+               
+            var name = GetTableName(type);
+
+            // TODO: pluralizer 
+            // TODO: query information schema and only select fields that are both in information schema and underlying class / interface 
+            var sbSql = new StringBuilder();
+            sbSql.Append("select * from " + name + " where ");
+            for (var i = 0; i < keys.Count(); i++)
+            {
+                sbSql.Append(keys.ElementAt(i).Name + " = @key_" + keys.ElementAt(i).Name + " ");
+                if (i < keys.Count() - 1)
+                    sbSql.Append(" and ");
+
+                dynParms.Add("@key_" + keys.ElementAt(i).Name, id.ElementAt(i));
+            }
+                    
+            sql = sbSql.ToString();
+            GetQueries[type.TypeHandle] = sql;
+         
+
+            
+            
+
+            T obj = null;
+
+            if (type.IsInterface)
+            {
+                var res = connection.Query(sql, dynParms).FirstOrDefault() as IDictionary<string, object>;
+
+                if (res == null)
+                    return (T)((object)null);
+
+                obj = ProxyGenerator.GetInterfaceProxy<T>();
+
+                foreach (var property in TypePropertiesCache(type))
+                {
+                    var val = res[property.Name];
+                    property.SetValue(obj, val, null);
+                }
+
+                ((IProxy)obj).IsDirty = false;   //reset change tracking and return
+            }
+            else
+            {
+                obj = connection.Query<T>(sql, dynParms, transaction: transaction, commandTimeout: commandTimeout).FirstOrDefault();
+            }
+            return obj;
+        }
+
+
         private static string GetTableName(Type type)
         {
             string name;
