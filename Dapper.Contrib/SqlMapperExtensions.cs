@@ -95,7 +95,18 @@ namespace Dapper.Contrib.Extensions
 			return true;
 		}
 
-    	/// <summary>
+        public static bool IsKeyWriteable(PropertyInfo pi, bool defaultValue = false)
+        {
+            object[] attributes = pi.GetCustomAttributes(typeof(KeyAttribute), false);
+            if (attributes.Length == 1)
+            {
+                KeyAttribute key = (KeyAttribute)attributes[0];
+                return key.AllowWrite;
+            }
+            return defaultValue;
+        }
+
+        /// <summary>
         /// Returns a single entity by a single id from table "Ts". T must be of interface type. 
         /// Id must be marked with [Key] attribute.
         /// Created entity is tracked/intercepted for changes and used by the Update() extension. 
@@ -160,7 +171,9 @@ namespace Dapper.Contrib.Extensions
             string name;
             if (!TypeTableName.TryGetValue(type.TypeHandle, out name))
             {
-                name = type.Name + "s";
+                name = type.Name;
+                if (name.Contains("`")) name = name.Remove(name.IndexOf("`"));
+                name = name + "s";
                 if (type.IsInterface && name.StartsWith("I"))
                     name = name.Substring(1);
               
@@ -192,7 +205,7 @@ namespace Dapper.Contrib.Extensions
 			var allProperties = TypePropertiesCache(type);
             var keyProperties = KeyPropertiesCache(type);
 			var computedProperties = ComputedPropertiesCache(type);
-			var allPropertiesExceptKeyAndComputed = allProperties.Except(keyProperties.Union(computedProperties));
+			var allPropertiesExceptKeyAndComputed = allProperties.Except(keyProperties.Union(computedProperties).Where(k => !IsKeyWriteable(k, false)));
 
             for (var i = 0; i < allPropertiesExceptKeyAndComputed.Count(); i++)
             {
@@ -213,6 +226,46 @@ namespace Dapper.Contrib.Extensions
 			ISqlAdapter adapter = GetFormatter(connection);
 			int id = adapter.Insert(connection, transaction, commandTimeout, name, sbColumnList.ToString(), sbParameterList.ToString(),  keyProperties, entityToInsert);
 			return id;
+        }
+
+        /// <summary>
+        /// Inserts an entity into table "Ts" and returns identity id.
+        /// </summary>
+        /// <param name="connection">Open SqlConnection</param>
+        /// <param name="entityToInsert">Entity to insert</param>
+        /// <returns>Identity of inserted entity</returns>
+        public static TKey Insert<T, TKey>(this IDbConnection connection, T entityToInsert, IDbTransaction transaction = null, int? commandTimeout = null) where T : class
+        {
+
+            var type = typeof(T);
+
+            var name = GetTableName(type);
+
+            var sbColumnList = new StringBuilder(null);
+
+            var allProperties = TypePropertiesCache(type);
+            var keyProperties = KeyPropertiesCache(type);
+            var allPropertiesExceptKey = allProperties.Except(keyProperties.Where(k => !IsKeyWriteable(k, false)));
+
+            for (var i = 0; i < allPropertiesExceptKey.Count(); i++)
+            {
+                var property = allPropertiesExceptKey.ElementAt(i);
+                sbColumnList.AppendFormat("[{0}]", property.Name);
+                if (i < allPropertiesExceptKey.Count() - 1)
+                    sbColumnList.Append(", ");
+            }
+
+            var sbParameterList = new StringBuilder(null);
+            for (var i = 0; i < allPropertiesExceptKey.Count(); i++)
+            {
+                var property = allPropertiesExceptKey.ElementAt(i);
+                sbParameterList.AppendFormat("@{0}", property.Name);
+                if (i < allPropertiesExceptKey.Count() - 1)
+                    sbParameterList.Append(", ");
+            }
+            ISqlAdapter adapter = GetFormatter(connection);
+            TKey id = adapter.Insert<TKey>(connection, transaction, commandTimeout, name, sbColumnList.ToString(), sbParameterList.ToString(), keyProperties, entityToInsert);
+            return id;
         }
 
         /// <summary>
@@ -496,6 +549,15 @@ namespace Dapper.Contrib.Extensions
     [AttributeUsage(AttributeTargets.Property)]
     public class KeyAttribute : Attribute
     {
+        public KeyAttribute()
+            : this(false)
+        {
+        }
+        public KeyAttribute(bool allowWrite)
+        {
+            AllowWrite = allowWrite;
+        }
+        public bool AllowWrite { get; private set; }
     }
 
 	[AttributeUsage(AttributeTargets.Property)]
@@ -517,21 +579,28 @@ namespace Dapper.Contrib.Extensions
 public interface ISqlAdapter
 {
 	int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert);
+    TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert);
 }
 
 public class SqlServerAdapter : ISqlAdapter
 {
 	public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
+        return Insert<int>(connection, transaction, commandTimeout, tableName, columnList, parameterList, keyProperties, entityToInsert);
+    }
+
+	public TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
 	{
 		string cmd = String.Format("insert into {0} ({1}) values ({2})", tableName, columnList, parameterList);
 
-		connection.Execute(cmd, entityToInsert, transaction: transaction, commandTimeout: commandTimeout); 
+		connection.Execute(cmd, entityToInsert, transaction: transaction, commandTimeout: commandTimeout);
 
 		//NOTE: would prefer to use IDENT_CURRENT('tablename') or IDENT_SCOPE but these are not available on SQLCE
 		var r = connection.Query("select @@IDENTITY id", transaction: transaction, commandTimeout: commandTimeout);
-		int id = (int)r.First().id;
-		if (keyProperties.Any())
-			keyProperties.First().SetValue(entityToInsert, id, null);
+		var o = r.First().id;
+		TKey id = (o == null) ? default(TKey) : (TKey)o;
+		if (keyProperties.Any(k => !Dapper.Contrib.Extensions.SqlMapperExtensions.IsKeyWriteable(k, false)))
+				keyProperties.First().SetValue(entityToInsert, id, null);
 		return id;
 	}
 }
@@ -539,36 +608,43 @@ public class SqlServerAdapter : ISqlAdapter
 public class PostgresAdapter : ISqlAdapter
 {
 	public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
+        return Insert<int>(connection, transaction, commandTimeout, tableName, columnList, parameterList, keyProperties, entityToInsert);
+    }
+
+	public TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
 	{
 		StringBuilder sb = new StringBuilder();
 		sb.AppendFormat("insert into {0} ({1}) values ({2})", tableName, columnList, parameterList);
 
+		keyProperties = keyProperties.Where(k => !Dapper.Contrib.Extensions.SqlMapperExtensions.IsKeyWriteable(k, false));
+
 		// If no primary key then safe to assume a join table with not too much data to return
 		if (!keyProperties.Any())
-			sb.Append(" RETURNING *");
+				sb.Append(" RETURNING *");
 		else
 		{
-			sb.Append(" RETURNING ");
-			bool first = true;
-			foreach (var property in keyProperties)
-			{
-				if (!first)
-					sb.Append(", ");
-				first = false;
-				sb.Append(property.Name);
-			}
+				sb.Append(" RETURNING ");
+				bool first = true;
+				foreach (var property in keyProperties)
+				{
+					if (!first)
+                    		sb.Append(", ");
+					first = false;
+					sb.Append(property.Name);
+				}
 		}
 
 		var results = connection.Query(sb.ToString(), entityToInsert, transaction: transaction, commandTimeout: commandTimeout);
 
 		// Return the key by assinging the corresponding property in the object - by product is that it supports compound primary keys
-		int id = 0;
+		TKey id = default(TKey);
 		foreach (var p in keyProperties)
 		{
-			var value = ((IDictionary<string, object>)results.First())[p.Name.ToLower()];
-			p.SetValue(entityToInsert, value, null);
-			if (id == 0)
-				id = Convert.ToInt32(value);
+				var value = ((IDictionary<string, object>)results.First())[p.Name.ToLower()];
+				p.SetValue(entityToInsert, value, null);
+				if (object.Equals(id, default(TKey)))
+					id = (TKey)Convert.ChangeType(value, typeof(TKey));
 		}
 		return id;
 	}
@@ -576,15 +652,22 @@ public class PostgresAdapter : ISqlAdapter
 
 public class SQLiteAdapter : ISqlAdapter
 {
+
 	public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+	{
+		return Insert<int>(connection, transaction, commandTimeout, tableName, columnList, parameterList, keyProperties, entityToInsert);
+	}
+
+	public TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
 	{
 		string cmd = String.Format("insert into {0} ({1}) values ({2})", tableName, columnList, parameterList);
 
 		connection.Execute(cmd, entityToInsert, transaction: transaction, commandTimeout: commandTimeout);
 
 		var r = connection.Query("select last_insert_rowid() id", transaction: transaction, commandTimeout: commandTimeout);
-		int id = (int)r.First().id;
-		if (keyProperties.Any())
+		var o = r.First().id;
+		TKey id = (o == null) ? default(TKey) : (TKey)o;
+		if (keyProperties.Any(k => !Dapper.Contrib.Extensions.SqlMapperExtensions.IsKeyWriteable(k, false)))
 			keyProperties.First().SetValue(entityToInsert, id, null);
 		return id;
 	}
