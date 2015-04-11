@@ -11,6 +11,7 @@ namespace Dapper.Contrib.Tests
         {
             Setup();
             RunTests();
+            RunTestsGeneric();
                 Console.WriteLine("Press any key...");
             Console.ReadKey();
         }
@@ -29,8 +30,10 @@ namespace Dapper.Contrib.Tests
             {
                 connection.Open();
                 connection.Execute(@" create table Stuff (TheId int IDENTITY(1,1) not null, Name nvarchar(100) not null, Created DateTime null) ");
-                connection.Execute(@" create table People (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null) ");
+                connection.Execute(@" create table People (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null, Age int not null) ");
                 connection.Execute(@" create table Users (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null, Age int not null) ");
+                connection.Execute(@" create table Persons (Id bigint IDENTITY(1,1) not null, Name nvarchar(100) not null, Age int not null) ");
+                connection.Execute(@" create table Managers (Id uniqueidentifier not null, Name nvarchar(100) not null, Age int not null) ");
                 connection.Execute(@" create table Automobiles (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null) ");
                 connection.Execute(@" create table Results (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null, [Order] int not null) ");
             }
@@ -46,6 +49,19 @@ namespace Dapper.Contrib.Tests
                 method.Invoke(tester, null);
                 Console.WriteLine(" - OK!");
             }
+        }
+
+        private static void RunTestsGeneric()
+        {
+            Dapper.Contrib.Extensions.SqlMapperExtensions.TableNameMapper = null;
+            var tester = new TestsGeneric.TestsGeneric();
+            foreach (var method in typeof(TestsGeneric.TestsGeneric).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            {
+                Console.Write("Running " + method.Name);
+                method.Invoke(tester, null);
+                Console.WriteLine(" - OK!");
+            }
+            Console.ReadKey();
         }
 
     }
