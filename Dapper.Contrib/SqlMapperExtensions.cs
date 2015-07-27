@@ -254,7 +254,7 @@ namespace Dapper.Contrib.Extensions
                 }
             }
 
-            if (name.Contains("`")) name = name.Remove(name.IndexOf("`"),2);
+            if (name.Contains("`")) name = name.Remove(name.IndexOf("`"), 2);
             TypeTableName[type.TypeHandle] = name;
             return name;
         }
@@ -696,20 +696,25 @@ public partial class SqlServerAdapter : ISqlAdapter
 {
     public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
     {
-        string cmd = String.Format("insert into {0} ({1}) values ({2})", tableName, columnList, parameterList);
+        return Insert<int>(connection, transaction, commandTimeout, tableName, columnList, parameterList, keyProperties, entityToInsert);
+    }
 
+    public TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
         var cmd = String.Format("insert into {0} ({1}) values ({2});select SCOPE_IDENTITY() id", tableName, columnList, parameterList);
-        var multi = connection.QueryMultiple(cmd,entityToInsert , transaction, commandTimeout);
+        var multi = connection.QueryMultiple(cmd, entityToInsert, transaction, commandTimeout);
 
-        var id = (int)multi.Read().First().id;
+        var o = multi.Read().First().id;
+        TKey id = (o == null) ? default(TKey) : (TKey)o;
         var propertyInfos = keyProperties as PropertyInfo[] ?? keyProperties.ToArray();
-        if (!propertyInfos.Any()) return id;
-
-        var idProperty = propertyInfos.First();
-        if (idProperty.PropertyType.Name == "Int16") //for short id/key types issue #196
-            idProperty.SetValue(entityToInsert, (Int16)id, null);
-        else
-            idProperty.SetValue(entityToInsert, id, null);
+        if (keyProperties.Any(k => !Dapper.Contrib.Extensions.SqlMapperExtensions.IsKeyWriteable(k, false)))
+        {
+            var idProperty = propertyInfos.First();
+            if (idProperty.PropertyType.Name == "Int16") //for short id/key types issue #196
+                idProperty.SetValue(entityToInsert, Convert.ToInt16(id), null);
+            else
+                idProperty.SetValue(entityToInsert, Convert.ToInt32(id), null);
+        }
         return id;
     }
 }
@@ -717,6 +722,11 @@ public partial class SqlServerAdapter : ISqlAdapter
 public partial class SqlCeServerAdapter : ISqlAdapter
 {
     public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
+        return Insert<int>(connection, transaction, commandTimeout, tableName, columnList, parameterList, keyProperties, entityToInsert);
+    }
+
+    public TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
     {
         var cmd = String.Format("insert into {0} ({1}) values ({2})", tableName, columnList, parameterList);
         connection.Execute(cmd, entityToInsert, transaction, commandTimeout);
@@ -735,6 +745,7 @@ public partial class SqlCeServerAdapter : ISqlAdapter
         }
         return id;
     }
+
 }
 
 
@@ -786,7 +797,13 @@ public partial class PostgresAdapter : ISqlAdapter
 public partial class SQLiteAdapter : ISqlAdapter
 {
 
+
     public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
+        return Insert<int>(connection, transaction, commandTimeout, tableName, columnList, parameterList, keyProperties, entityToInsert);
+    }
+
+    public TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
     {
         var cmd = String.Format("insert into {0} ({1}) values ({2}); select last_insert_rowid() id", tableName, columnList, parameterList);
         var r = connection.Query(cmd, entityToInsert, transaction: transaction, commandTimeout: commandTimeout);
