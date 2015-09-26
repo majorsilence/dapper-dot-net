@@ -301,11 +301,11 @@ using (var multi = connection.QueryMultiple(sql, new {id=selectedId}))
 
 Stored Procedures
 ---------------------
-Dapper supports fully stored procs:
+Dapper fully supports stored procs:
 
 ```csharp
 var user = cnn.Query<User>("spGetUser", new {Id = 1}, 
-        commandType: CommandType.StoredProcedure).First();}}}
+        commandType: CommandType.StoredProcedure).SingleOrDefault();
 ```
 
 If you want something more fancy, you can do:
@@ -340,9 +340,9 @@ Dapper's simplicity means that many feature that ORMs ship with are stripped out
 
 Dapper does not manage your connection's lifecycle, it assumes the connection it gets is open AND has no existing datareaders enumerating (unless MARS is enabled)
 
-Will dapper work with my db provider?
+Will Dapper work with my DB provider?
 ---------------------
-Dapper has no DB specific implementation details, it works across all .net ado providers including sqlite, sqlce, firebird, oracle, MySQL, PostgreSQL and SQL Server
+Dapper has no DB specific implementation details, it works across all .NET ADO providers including [SQLite](http://www.sqlite.org/), SQL CE, Firebird, Oracle, MySQL, PostgreSQL and SQL Server.
 
 Do you have a comprehensive list of examples?
 ---------------------
