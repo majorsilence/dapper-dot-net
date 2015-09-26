@@ -38,11 +38,16 @@ namespace Dapper.Contrib.Extensions
         private static readonly ConcurrentDictionary<RuntimeTypeHandle, string> TypeTableName = new ConcurrentDictionary<RuntimeTypeHandle, string>();
 
         private static readonly Dictionary<string, ISqlAdapter> AdapterDictionary = new Dictionary<string, ISqlAdapter> {
+                                                                                            {"sqlconnection", new SqlServerAdapter()},
+                                                                                            {"sqlceconnection", new SqlCeServerAdapter()},
+                                                                                            {"npgsqlconnection", new PostgresAdapter()},
+                                                                                            {"sqliteconnection", new SQLiteAdapter()},
 																							{"sqlconnection", new SqlServerAdapter()},
 																							{"sqlceconnection", new SqlCeServerAdapter()},
 																							{"npgsqlconnection", new PostgresAdapter()},
-																							{"sqliteconnection", new SQLiteAdapter()}
-																						};
+																							{"sqliteconnection", new SQLiteAdapter()},
+                                                                                            {"mysqlconnection", new MySqlAdapter()}
+                                                                                        };
 
         private static IEnumerable<PropertyInfo> ComputedPropertiesCache(Type type)
         {
@@ -285,10 +290,13 @@ namespace Dapper.Contrib.Extensions
             var computedProperties = ComputedPropertiesCache(type);
             var allPropertiesExceptKeyAndComputed = allProperties.Except(keyProperties.Union(computedProperties).Where(k => !IsKeyWriteable(k, false)));
 
+            var qouteAdapter = GetFormatter(connection);
             for (var i = 0; i < allPropertiesExceptKeyAndComputed.Count(); i++)
             {
                 var property = allPropertiesExceptKeyAndComputed.ElementAt(i);
-                sbColumnList.AppendFormat("[{0}]", property.Name);
+                sbColumnList.Append(qouteAdapter.ColumnQoutePrefix);
+                sbColumnList.Append(property.Name);
+                sbColumnList.Append(qouteAdapter.ColumnQouteSuffix);
                 if (i < allPropertiesExceptKeyAndComputed.Count() - 1)
                     sbColumnList.Append(", ");
             }
@@ -690,6 +698,8 @@ public partial interface ISqlAdapter
 {
     int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert);
     TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert);
+    char ColumnQoutePrefix { get; }
+    char ColumnQouteSuffix { get; }
 }
 
 public partial class SqlServerAdapter : ISqlAdapter
@@ -717,6 +727,22 @@ public partial class SqlServerAdapter : ISqlAdapter
         }
         return id;
     }
+
+    public char ColumnQoutePrefix
+    {
+        get
+        {
+            return '[';
+        }
+    }
+    public char ColumnQouteSuffix
+    {
+        get
+        {
+            return ']';
+        }
+    }
+
 }
 
 public partial class SqlCeServerAdapter : ISqlAdapter
@@ -746,6 +772,20 @@ public partial class SqlCeServerAdapter : ISqlAdapter
         return id;
     }
 
+    public char ColumnQoutePrefix
+    {
+        get
+        {
+            return '[';
+        }
+    }
+    public char ColumnQouteSuffix
+    {
+        get
+        {
+            return ']';
+        }
+    }
 }
 
 
@@ -792,6 +832,22 @@ public partial class PostgresAdapter : ISqlAdapter
         }
         return id;
     }
+
+    public char ColumnQoutePrefix
+    {
+        get
+        {
+            return '"';
+        }
+    }
+    public char ColumnQouteSuffix
+    {
+        get
+        {
+            return '"';
+        }
+    }
+
 }
 
 public partial class SQLiteAdapter : ISqlAdapter
@@ -814,6 +870,51 @@ public partial class SQLiteAdapter : ISqlAdapter
         return id;
     }
 
+    public char ColumnQoutePrefix
+    {
+        get
+        {
+            return '[';
+        }
+    }
+    public char ColumnQouteSuffix
+    {
+        get
+        {
+            return ']';
+        }
+    }
 
+}
+
+public class MySqlAdapter : ISqlAdapter
+{
+    public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
+        string cmd = String.Format("insert into {0} ({1}) values ({2})", tableName, columnList, parameterList);
+
+        connection.Execute(cmd, entityToInsert, transaction: transaction, commandTimeout: commandTimeout);
+
+        var r = connection.Query("select LAST_INSERT_ID() id", transaction: transaction, commandTimeout: commandTimeout);
+        int id = (int)r.First().id;
+        if (keyProperties.Any())
+            keyProperties.First().SetValue(entityToInsert, id, null);
+        return id;
+    }
+
+    public char ColumnQoutePrefix
+    {
+        get
+        {
+            return '`';
+        }
+    }
+    public char ColumnQouteSuffix
+    {
+        get
+        {
+            return '`';
+        }
+    }
 
 }
