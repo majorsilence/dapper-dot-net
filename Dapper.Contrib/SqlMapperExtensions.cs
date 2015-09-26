@@ -889,14 +889,22 @@ public partial class SQLiteAdapter : ISqlAdapter
 
 public partial class MySqlAdapter : ISqlAdapter
 {
+
+
     public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
+    {
+        return Insert<int>(connection, transaction, commandTimeout, tableName, columnList, parameterList, keyProperties, entityToInsert);
+    }
+
+    public TKey Insert<TKey>(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
     {
         string cmd = String.Format("insert into {0} ({1}) values ({2})", tableName, columnList, parameterList);
 
         connection.Execute(cmd, entityToInsert, transaction: transaction, commandTimeout: commandTimeout);
 
         var r = connection.Query("select LAST_INSERT_ID() id", transaction: transaction, commandTimeout: commandTimeout);
-        int id = (int)r.First().id;
+        var o = r.First().id;
+        TKey id = (o == null) ? default(TKey) : (TKey)o;
         if (keyProperties.Any())
             keyProperties.First().SetValue(entityToInsert, id, null);
         return id;
