@@ -887,7 +887,7 @@ public partial class SQLiteAdapter : ISqlAdapter
 
 }
 
-public class MySqlAdapter : ISqlAdapter
+public partial class MySqlAdapter : ISqlAdapter
 {
     public int Insert(IDbConnection connection, IDbTransaction transaction, int? commandTimeout, String tableName, string columnList, string parameterList, IEnumerable<PropertyInfo> keyProperties, object entityToInsert)
     {
